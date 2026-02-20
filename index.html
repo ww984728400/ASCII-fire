@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel Bonfire - Next Gen</title>
+    <link href="https://gs.jurieo.com/gemini/fonts-googleapis/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+    <style>
+        :root { 
+            --bg: #000000; 
+            --panel-bg: rgba(18, 18, 20, 0.45);
+            --text-main: #f5f5f7;
+            --text-secondary: #86868b;
+            --accent: #ffffff;
+            --danger: #ff3b30;
+            --border-color: rgba(255, 255, 255, 0.12);
+            --panel-width: 320px;
+            --control-bg: rgba(255, 255, 255, 0.08);
+            --toggle-bg: rgba(255, 255, 255, 0.15);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg); 
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0; 
+            display: flex; 
+            height: 100vh; 
+            overflow: hidden; 
+            touch-action: none;
+        }
+
+        /* 画布 100% 沉浸模式 */
+        #main-view {
+            width: 100vw;
+            height: 100vh;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            background: var(--bg); 
+            overflow: hidden; 
+            position: absolute;
+            top: 0; left: 0;
+            perspective: 2000px; 
+            z-index: 1;
+        }
+
+        /* 悬浮毛玻璃控制舱 */
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: var(--panel-width);
+            max-height: calc(100vh - 40px);
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            z-index: 10;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 沉浸式隐藏 UI 样式 */
+        body.ui-hidden #ui-panel {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(20px);
+        }
+
+        #ui-panel::-webkit-scrollbar { width: 4px; background: transparent; }
+        #ui-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+
+        .header-actions { display: flex; gap: 8px; }
+
+        .win-btn {
+            width: 24px; height: 24px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; border: none; cursor: pointer;
+            background: var(--control-bg); color: var(--text-main);
+            transition: all 0.2s; font-size: 10px; font-family: inherit;
+        }
+        .btn-close:hover { background: var(--danger); color: white; }
+        .win-btn:hover { background: var(--toggle-bg); }
+
+        /* 折叠面板样式重构 */
+        details {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        summary {
+            padding: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            user-select: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.02);
+            transition: background 0.2s;
+        }
+        summary:hover { background: rgba(255,255,255,0.06); }
+        summary::-webkit-details-marker { display: none; }
+        summary::after { content: '+'; color: var(--text-secondary); font-size: 14px; }
+        details[open] summary::after { content: '−'; }
+        details[open] summary { border-bottom: 1px solid var(--border-color); }
+        
+        .details-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-size: 10px; font-weight: 400; color: var(--text-secondary); text-transform: uppercase; }
+        
+        .val-input {
+            float: right; background: transparent; border: none;
+            color: var(--text-secondary); font-size: 10px; font-weight: 700;
+            text-align: right; width: 45px; outline: none; padding: 0; font-family: inherit;
+        }
+
+        #canvas-wrapper { 
+            position: relative; 
+            line-height: 0; 
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        
+        #canvas-wrapper.isometric { transform: rotateX(15deg); }
+
+        canvas { image-rendering: pixelated; cursor: crosshair; background: #000; border-radius: 4px; box-shadow: 0 0 80px rgba(0,0,0,0.8); }
+
+        .switch { position: relative; display: inline-block; width: 32px; height: 16px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--control-bg); transition: .4s; border-radius: 16px; border: 1px solid var(--border-color); }
+        .slider:before { position: absolute; content: ""; height: 10px; width: 10px; left: 2px; bottom: 2px; background-color: var(--text-secondary); transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(16px); background-color: var(--bg); }
+
+        button.action-btn {
+            background: var(--control-bg); color: var(--text-main); border: 1px solid var(--border-color);
+            padding: 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: inherit;
+        }
+        button.action-btn:hover { background: var(--toggle-bg); border-color: var(--text-secondary); }
+        
+        select {
+            background: var(--control-bg); color: var(--text-main); font-family: inherit;
+            border: 1px solid var(--border-color); padding: 6px 8px; border-radius: 6px; font-size: 11px;
+            outline: none; appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='grey' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
+            padding-right: 28px;
+        }
+        select option { background-color: #121214; color: #f5f5f7; }
+
+        input[type="text"].custom-chars { background: var(--control-bg); color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 8px; border-radius: 6px; font-size: 11px; outline: none; font-family: inherit; }
+        input[type="color"] { -webkit-appearance: none; border: none; width: 100%; height: 20px; cursor: pointer; background: none; padding: 0; border-radius: 4px; }
+        input[type="color"]::-webkit-color-swatch { border: 1px solid var(--border-color); border-radius: 4px; }
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 2px; background: var(--control-bg); border-radius: 2px; accent-color: var(--accent); }
+
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; }
+        .panel-footer { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        #status { font-size: 9px; color: var(--text-secondary); text-align: center; margin-top: 4px; opacity: 0.6; }
+    </style>
+</head>
+<body>
+
+    <div id="main-view">
+        <div id="canvas-wrapper">
+            <canvas id="fireCanvas"></canvas>
+        </div>
+    </div>
+
+    <div id="ui-panel">
+        <div class="panel-header">
+            <h3>BONFIRE_OS</h3>
+            <div class="header-actions">
+                <button class="win-btn" id="btn-fs" title="Fullscreen">⤢</button>
+                <button class="win-btn btn-close" id="btn-close" title="Exit">✕</button>
+            </div>
+        </div>
+
+        <details open>
+            <summary>[ 视觉渲染 / Rendering ]</summary>
+            <div class="details-content">
+                <div class="control-group toggle-row">
+                    <label>3D 模式 / 3D Mode</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle3DSwitch">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div id="group3D" style="display:none; flex-direction: column; gap: 12px;">
+                    <div class="control-group">
+                        <label>混合模式 / Blend Mode</label>
+                        <select id="blendMode">
+                            <option value="source-over">正常 / Source-Over</option>
+                            <option value="lighter">光学叠加 / Lighter</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>等高线 / Contours</label>
+                        <select id="contourStyle">
+                            <option value="none">无 / None</option>
+                            <option value="horizontal">横向扫描 / Horizontal</option>
+                            <option value="solid" selected>实线网格 / Solid Grid</option>
+                            <option value="dashed">虚线网格 / Dashed Grid</option>
+                        </select>
+                    </div>
+                    <div class="control-group toggle-row">
+                        <label>自动旋转 / Auto Rotate</label>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleAutoRot">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label>手动旋转 / Rotation <input type="number" id="val-rot" class="val-input" readonly></label>
+                        <input type="range" id="camRotSlider" min="0" max="360" value="0">
+                    </div>
+                    <div class="control-group toggle-row">
+                        <label>游离余烬 / Embers</label>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleEmbers" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-group toggle-row">
+                        <label>景深迷雾 / Depth Fog</label>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleFog" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details>
+            <summary>[ 形态引擎 / Physics ]</summary>
+            <div class="details-content">
+                <div class="control-group">
+                    <label>画布宽度 / Width <input type="number" id="val-width" class="val-input" title="Max: 1000"></label>
+                    <input type="range" id="canvasWidth" min="200" max="1000" value="400">
+                </div>
+                <div class="control-group">
+                    <label>画布高度 / Height <input type="number" id="val-height" class="val-input" title="Max: 1000"></label>
+                    <input type="range" id="canvasHeight" min="200" max="1000" value="500">
+                </div>
+                <div class="control-group">
+                    <label>字符集 / Charset</label>
+                    <select id="charSet">
+                        <option value="ascii">经典 / ASCII</option>
+                        <option value="binary">二进制 / Binary</option>
+                        <option value="blocks">方块 / Blocks</option>
+                        <option value="braille">盲文 / Braille</option>
+                        <option value="dots">点阵 / Dots</option>
+                        <option value="japanese">日文 / Kanji</option>
+                        <option value="matrix">矩阵 / Matrix</option>
+                        <option value="customChar">自定义 / Custom</option>
+                    </select>
+                </div>
+                <div class="control-group" id="customCharGroup" style="display:none">
+                    <label>输入字符 / Input String</label>
+                    <input type="text" id="customInput" class="custom-chars" value="@#$*!">
+                </div>
+                <div class="control-group">
+                    <label>字号 / Font Size <input type="number" id="val-font" class="val-input" title="Max: 24"></label>
+                    <input type="range" id="fontSize" min="6" max="24" value="12">
+                </div>
+                <div class="control-group">
+                    <label>缩放 / Scale <input type="number" id="val-scale" class="val-input" step="0.1" title="Max: 2.0"></label>
+                    <input type="range" id="viewScale" min="0.5" max="2.0" step="0.1" value="1.0">
+                </div>
+                <div class="control-group">
+                    <label>燃烧速度 / Speed <input type="number" id="val-speed" class="val-input" step="0.1" title="Max: 3.0"></label>
+                    <input type="range" id="fireSpeed" min="0.2" max="3.0" step="0.1" value="1.0">
+                </div>
+            </div>
+        </details>
+
+        <details>
+            <summary>[ 色彩与环境 / Environment ]</summary>
+            <div class="details-content">
+                <div class="control-group">
+                    <label>预设 / Presets</label>
+                    <select id="colorPresets">
+                        <option value="custom">自定义 / Custom</option>
+                        <option value="classic">经典 / Classic</option>
+                        <option value="soul">灵魂 / Soul</option>
+                        <option value="forest">森 / Forest</option>
+                        <option value="cyber">赛博 / Cyber</option>
+                        <option value="toxic">剧毒 / Toxic</option>
+                        <option value="void">虚空 / Void</option>
+                        <option value="sunset">落日 / Sunset</option>
+                        <option value="ocean">深海 / Ocean</option>
+                        <option value="gold">黄金 / Gold</option>
+                        <option value="sakura">樱花 / Sakura</option>
+                    </select>
+                </div>
+                <div class="control-group"><label>顶部 / Top</label><input type="color" id="colorTop" value="#ff2200"></div>
+                <div class="control-group"><label>中部 / Mid</label><input type="color" id="colorMid" value="#ff8800"></div>
+                <div class="control-group"><label>底部 / Bottom</label><input type="color" id="colorBottom" value="#ffffff"></div>
+                <button class="action-btn" onclick="randomizeFireColors()">随机配色 / Shuffle Colors</button>
+                
+                <div class="control-group">
+                    <label>整体亮度 / Brightness <input type="number" id="val-brightness" class="val-input" step="0.1" title="Max: 3.0"></label>
+                    <input type="range" id="camBrightness" min="0.1" max="3.0" step="0.1" value="1.0">
+                </div>
+                <div class="control-group toggle-row">
+                    <label>复古监视器 / CRT Filter</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggleCRT" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="control-group toggle-row">
+                    <label>环境 / Rain Mode</label>
+                    <button class="action-btn" id="toggleRain" style="padding: 4px 8px;">OFF</button>
+                </div>
+                <div class="control-group">
+                    <label>音频场景 / Audio Scene</label>
+                    <select id="audioScene">
+                        <option value="bonfire">自然篝火 / Bonfire</option>
+                        <option value="charcoal">煤炭燃烧 / Charcoal</option>
+                        <option value="fireplace">室内壁炉 / Fireplace</option>
+                        <option value="twig">干燥枯枝 / Twigs</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>音量 / Volume <input type="number" id="val-vol" class="val-input" title="Max: 100"></label>
+                    <input type="range" id="audioVol" min="0" max="100" value="0">
+                </div>
+            </div>
+        </details>
+
+        <div class="panel-footer">
+            <button class="action-btn" onclick="randomizeFlame()">随机形态 / Randomize Shape</button>
+            <button class="action-btn" id="exportGif">导出 10s GIF / Export GIF</button>
+            <div id="status">System Ready_</div>
+        </div>
+    </div>
+
+    <script>
+        let win;
+        try {
+            win = nw.Window.get();
+            document.getElementById('btn-close').onclick = () => win.close();
+            document.getElementById('btn-fs').onclick = () => win.toggleFullscreen();
+        } catch(e) {}
+
+        const canvas = document.getElementById('fireCanvas'), wrapper = document.getElementById('canvas-wrapper'), ctx = canvas.getContext('2d', { alpha: false });
+        
+        const fontSizeInput = document.getElementById('fontSize'), viewScaleInput = document.getElementById('viewScale'), speedInput = document.getElementById('fireSpeed'), volInput = document.getElementById('audioVol'), widthInput = document.getElementById('canvasWidth'), heightInput = document.getElementById('canvasHeight'), charSetSelect = document.getElementById('charSet'), presetSelect = document.getElementById('colorPresets'), audioSceneSelect = document.getElementById('audioScene'), statusText = document.getElementById('status'), cBot = document.getElementById('colorBottom'), cMid = document.getElementById('colorMid'), cTop = document.getElementById('colorTop'), customInput = document.getElementById('customInput'), customCharGroup = document.getElementById('customCharGroup');
+        const camBrightnessInput = document.getElementById('camBrightness');
+
+        const valWidth = document.getElementById('val-width'), valHeight = document.getElementById('val-height'), valFont = document.getElementById('val-font'), valSpeed = document.getElementById('val-speed'), valVol = document.getElementById('val-vol'), valScale = document.getElementById('val-scale'), valBrightness = document.getElementById('val-brightness');
+
+        let is3D = false, isRainy = false;
+        let idleTimer;
+        let analyser, dataArray;
+        let raindrops = [], smokeParticles = [];
+        let gifFrames = [], isRecording = false;
+
+        let camRot = 0;
+        let camOffsetX = 0;
+        let camOffsetY = 0;
+        let camZoom = 1.0;
+        let embersParticles = [];
+        let isSliderDragging = false;
+
+        const camRotSlider = document.getElementById('camRotSlider');
+        const valRot = document.getElementById('val-rot');
+
+        camRotSlider.addEventListener('input', (e) => {
+            camRot = e.target.value * Math.PI / 180;
+            valRot.value = e.target.value;
+            isSliderDragging = true;
+        });
+        camRotSlider.addEventListener('change', () => { isSliderDragging = false; });
+
+        function syncInput(rangeEl, inputEl, callback) {
+            inputEl.value = rangeEl.value;
+            rangeEl.oninput = () => { inputEl.value = rangeEl.value; callback(); };
+            inputEl.onchange = () => { rangeEl.value = inputEl.value; callback(); };
+        }
+
+        let fontSize = 12, cols, rows, fireData = [], sparks = [], wind = 0, flameHeight = 12, chaosLevel = 0.6, lastTime = 0, speed = 1.0;
+        let audioCtx, mainGain, lpFilter;
+
+        const charSets = { 
+            ascii: ['@', '#', '$', '*', '!', ';', ':', '.', ' '], 
+            binary: ['1', '0', ' '], 
+            blocks: ['█', '▓', '▒', '░', ' '], 
+            braille: ['⣿', '⣶', '⣤', '⣀', ' '], 
+            dots: ['●', '○', '•', '·', ' '], 
+            japanese: ['火', '炎', '熱', '炭', ' '], 
+            matrix: ['$', 'シ', '1', '0', ' '] 
+        };
+
+        const sceneConfig = {
+            bonfire: { lpf: 400, popFreq: 1200, popChance: 0.1, popVol: 0.8, noiseVol: 1.0 },
+            charcoal: { lpf: 300, popFreq: 1500, popChance: 0.15, popVol: 1.0, noiseVol: 0.01 },
+            fireplace: { lpf: 200, popFreq: 800, popChance: 0.05, popVol: 1.2, noiseVol: 0.8 },
+            twig: { lpf: 800, popFreq: 2200, popChance: 0.2, popVol: 0.4, noiseVol: 1.2 }
+        };
+
+        function resetIdleTimer() {
+            document.body.classList.remove('ui-hidden');
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                document.body.classList.add('ui-hidden');
+            }, 4000);
+        }
+
+        function initAudio() {
+            if (audioCtx) return; audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            mainGain = audioCtx.createGain(); mainGain.gain.value = 0;
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            const bufferSize = 4096; let brownLastOut = 0;
+            const node = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+            node.onaudioprocess = (e) => {
+                let output = e.outputBuffer.getChannelData(0);
+                const scene = sceneConfig[audioSceneSelect.value] || sceneConfig.bonfire;
+                for (let i = 0; i < bufferSize; i++) {
+                    let white = Math.random() * 2 - 1; brownLastOut = (brownLastOut + (0.02 * white)) / 1.02;
+                    output[i] = ((brownLastOut * 2.5) + (Math.random() * 2 - 1) * 0.1) * scene.noiseVol;
+                }
+            };
+            lpFilter = audioCtx.createBiquadFilter(); lpFilter.type = 'lowpass'; lpFilter.frequency.value = 400;
+            node.connect(lpFilter); analyser.connect(mainGain); mainGain.connect(audioCtx.destination);
+        }
+
+        document.getElementById('toggle3DSwitch').onchange = function() {
+            is3D = this.checked;
+            wrapper.classList.toggle('isometric', is3D);
+            document.getElementById('group3D').style.display = is3D ? 'flex' : 'none';
+        };
+
+        charSetSelect.onchange = function() {
+            document.getElementById('customCharGroup').style.display = this.value === 'customChar' ? 'flex' : 'none';
+        };
+
+        document.getElementById('toggleRain').onclick = function() {
+            isRainy = !isRainy;
+            this.innerText = isRainy ? "ON" : "OFF";
+        };
+
+        const mainView = document.getElementById('main-view');
+        mainView.addEventListener('dragover', (e) => e.preventDefault());
+        mainView.addEventListener('drop', (e) => {
+            e.preventDefault();
+            for(let i=0; i<cols; i++) fireData[(rows-1) * cols + i] = 255;
+            playPop(); statusText.innerText = "Feast!_";
+            setTimeout(() => statusText.innerText = "System Ready_", 2000);
+        });
+
+        function initCanvas() {
+            fontSize = parseInt(fontSizeInput.value); 
+            canvas.width = parseInt(widthInput.value); 
+            canvas.height = parseInt(heightInput.value);
+            cols = Math.floor(canvas.width / (fontSize * 0.75)); 
+            rows = Math.floor(canvas.height / fontSize); 
+            fireData = new Array(cols * rows).fill(0);
+        }
+
+        function updateUIEffects() {
+            if(!is3D) wrapper.style.transform = `scale(${viewScaleInput.value})`;
+            speed = parseFloat(speedInput.value);
+            if (mainGain) mainGain.gain.setTargetAtTime(parseInt(volInput.value) / 100, audioCtx.currentTime, 0.1);
+        }
+
+        presetSelect.onchange = function() { const p = palettes[this.value]; if (p) { cTop.value = p.top; cMid.value = p.mid; cBot.value = p.bot; updateUIEffects(); } };
+        const palettes = { classic: { top: "#FF2200", mid: "#FF8800", bot: "#FFFFFF" }, soul: { top: "#0033FF", mid: "#00FFFF", bot: "#EEFFFF" }, forest: { top: "#006622", mid: "#33FF77", bot: "#CCFFDD" }, cyber: { top: "#FF00FF", mid: "#5500FF", bot: "#CCFFFF" }, toxic: { top: "#44FF00", mid: "#FFFF00", bot: "#FFFFFF" }, void: { top: "#333333", mid: "#666666", bot: "#AAAAAA" }, sunset: { top: "#660066", mid: "#FF4400", bot: "#FFCC00" }, ocean: { top: "#000066", mid: "#0044AA", bot: "#FFFFFF" }, gold: { top: "#884400", mid: "#CC9900", bot: "#FFFFAA" }, sakura: { top: "#FF66AA", mid: "#FFBBDD", bot: "#FFFFFF" } };
+
+        function randomizeFireColors() {
+            presetSelect.value = "custom"; const h = Math.random() * 360;
+            const hslToHex = (h, s, l) => { l /= 100; const a = s * Math.min(l, 1 - l) / 100; const f = n => { const k = (n + h / 30) % 12; const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); return Math.round(255 * color).toString(16).padStart(2, '0'); }; return `#${f(0)}${f(8)}${f(4)}`; };
+            cBot.value = hslToHex(h, 100, 85); cMid.value = hslToHex((h + 20) % 360, 90, 60); cTop.value = hslToHex((h + 40) % 360, 80, 35); updateUIEffects();
+        }
+
+        function playPop() {
+            if(!audioCtx || volInput.value == 0) return;
+            const scene = sceneConfig[audioSceneSelect.value] || sceneConfig.bonfire;
+            const bufferSize = audioCtx.sampleRate * 0.05, buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate), data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize / 4));
+            const source = audioCtx.createBufferSource(); source.buffer = buffer;
+            const filter = audioCtx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = scene.popFreq + (Math.random() - 0.5) * 500;
+            const g = audioCtx.createGain(); g.gain.value = (0.5 + Math.random() * scene.popVol) * (volInput.value/100);
+            source.connect(filter); filter.connect(g); g.connect(audioCtx.destination); source.start();
+        }
+
+        function randomizeFlame() { flameHeight = 7 + Math.random() * 16; chaosLevel = 0.4 + Math.random() * 1.6; wind = 0; }
+        
+        function updateFire() {
+            let currentFlameHeight = flameHeight;
+            if(analyser && volInput.value > 0) {
+                analyser.getByteFrequencyData(dataArray);
+                let avg = dataArray.reduce((a,b) => a+b) / dataArray.length;
+                currentFlameHeight += (avg / 255) * 15;
+            }
+            for (let x = 0; x < cols; x++) fireData[(rows - 1) * cols + x] = Math.random() > 0.6 ? 255 : 0;
+            for (let y = 0; y < rows - 1; y++) { 
+                for (let x = 0; x < cols; x++) { 
+                    const idx = y * cols + x, src = ((y + 1) * cols + x); 
+                    const drift = Math.round((Math.random() - 0.5) * chaosLevel * 4); 
+                    let tx = (x + drift + cols) % cols; 
+                    const val = fireData[src] - (Math.random() * currentFlameHeight); 
+                    fireData[y * cols + tx] = val > 0 ? val : 0; 
+                } 
+            }
+            if(isRainy) {
+                if(Math.random() > 0.6) raindrops.push({x: Math.random()*canvas.width, y: 0, s: 8 + Math.random()*10});
+                raindrops.forEach((r, i) => {
+                    r.y += r.s;
+                    const tx = Math.floor(r.x / (fontSize * 0.75));
+                    const ty = Math.floor(r.y / fontSize);
+                    const fIdx = ty * cols + tx;
+                    if(fireData[fIdx] > 50) {
+                        fireData[fIdx] = 0;
+                        smokeParticles.push({x: r.x, y: r.y, l: 1.0});
+                        raindrops.splice(i, 1);
+                    }
+                    if(r.y > canvas.height) raindrops.splice(i, 1);
+                });
+                smokeParticles.forEach((p, i) => { p.y -= 1; p.l -= 0.05; if(p.l <= 0) smokeParticles.splice(i, 1); });
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            let chars = charSetSelect.value === 'customChar' ? customInput.value.split('') : charSets[charSetSelect.value];
+            if (!chars || chars.length === 0) chars = [' '];
+            
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 1.3;
+            
+            const time = Date.now() * 0.002 * speed;
+            let globalBrightness = parseFloat(document.getElementById('camBrightness').value);
+
+            if (is3D && document.getElementById('toggleAutoRot').checked) {
+                camRot += 0.005 * speed;
+            }
+            if (is3D && !isSliderDragging) {
+                let deg = (((camRot * 180 / Math.PI) % 360) + 360) % 360;
+                camRotSlider.value = deg.toFixed(0);
+                valRot.value = deg.toFixed(0);
+            }
+
+            let renderQueue = [];
+            let side = Math.ceil(Math.sqrt(cols));
+            let spacing = (canvas.width * 0.5) / side; 
+            let maxDepth = side * spacing;
+
+            const angleIso = Math.PI / 6;
+            const project3D = (px, py, pz) => {
+                let xr = px * Math.cos(camRot) - py * Math.sin(camRot);
+                let yr = px * Math.sin(camRot) + py * Math.cos(camRot);
+                let ix = (xr - yr) * Math.cos(angleIso);
+                let iy = (xr + yr) * Math.sin(angleIso) - pz;
+                return {
+                    x: centerX + ix * camZoom + camOffsetX,
+                    y: centerY + iy * camZoom + camOffsetY,
+                    depthBase: xr + yr
+                };
+            };
+
+            let peaks = Array.from({length: side}, () => new Array(side).fill(null));
+
+            if (is3D) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(100, 150, 255, 0.15)'; 
+                ctx.lineWidth = 1;
+                
+                ctx.beginPath();
+                for(let i = 0; i <= side; i++) {
+                    let offset = (i - side/2) * spacing;
+                    let start = (-side/2) * spacing;
+                    let end = (side/2) * spacing;
+                    
+                    let p1 = project3D(offset, start, 0);
+                    let p2 = project3D(offset, end, 0);
+                    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+                    
+                    let p3 = project3D(start, offset, 0);
+                    let p4 = project3D(end, offset, 0);
+                    ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y);
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            for (let y = 0; y < rows; y++) { 
+                for (let x = 0; x < cols; x++) { 
+                    const val = fireData[y * cols + x]; 
+                    if (val > 15) { 
+                        let fillStyle;
+                        if (val > 204) fillStyle = cBot.value; 
+                        else if (val > 76) fillStyle = cMid.value; 
+                        else fillStyle = cTop.value; 
+                        
+                        let char = chars[chars.length - 1 - Math.floor((val / 255) * (chars.length - 1))];
+                        
+                        if (is3D) {
+                            let gridX = x % side;
+                            let gridY = Math.floor(x / side);
+                            let dx = gridX - side/2 + 0.5;
+                            let dy = gridY - side/2 + 0.5;
+                            
+                            let maxDist = side / 2;
+                            let noise = Math.sin(gridX * 0.6 + time * 1.2) * Math.cos(gridY * 0.6 - time * 0.8) * 0.4;
+                            let dist = Math.sqrt(dx*dx + dy*dy) + noise * maxDist * 0.6; 
+                            
+                            let coneFactor = Math.max(0, 1 - (dist / maxDist) * 1.2); 
+                            if (coneFactor <= 0) continue;
+                            
+                            let posX = dx * spacing;
+                            let posY = dy * spacing;
+                            
+                            let posZ = (rows - 1 - y) * (fontSize * 0.8);
+                            posZ = posZ * coneFactor; 
+
+                            if (val > 240) posZ *= (1.0 + Math.random() * 0.8);
+                            posZ += (val / 255) * (fontSize * 1.5) * coneFactor; 
+
+                            let swayAmplitude = Math.pow(posZ / 50, 1.2) * 2.5; 
+                            let swayX = (Math.sin(time + gridY * 0.4 - y * 0.15) * 1.0 + Math.sin(time * 2.3 + gridX * 0.8) * 0.5 + Math.sin(time * 5.1 + gridX * 2.0 + gridY * 2.0) * 0.2) * swayAmplitude;
+                            let swayY = (Math.cos(time * 0.9 + gridX * 0.4 - y * 0.12) * 1.0 + Math.cos(time * 2.1 + gridY * 0.7) * 0.5 + Math.cos(time * 4.8 + gridX * 1.5 + gridY * 1.5) * 0.2) * swayAmplitude;
+                            posX += swayX; posY += swayY;
+
+                            let p = project3D(posX, posY, posZ);
+                            let depthValue = p.depthBase * 10000 + posZ;
+                            
+                            let alpha = 0.5 + (val / 255) * 0.5;
+                            if (document.getElementById('toggleFog').checked) {
+                                let fogAlpha = (p.depthBase + maxDepth * 1.5) / (2.5 * maxDepth);
+                                fogAlpha = Math.max(0, Math.min(1, fogAlpha));
+                                let fogIntensity = val > 200 ? 0.3 : 0.85; 
+                                alpha *= (1.0 - fogIntensity + fogIntensity * fogAlpha);
+                            }
+                            alpha = Math.min(1.0, alpha * globalBrightness);
+                            
+                            renderQueue.push({ char: char, drawX: p.x, drawY: p.y, color: fillStyle, alpha: alpha, depth: depthValue, isEmber: false });
+                            if (!peaks[gridX][gridY] || posZ > peaks[gridX][gridY].posZ) peaks[gridX][gridY] = { drawX: p.x, drawY: p.y, posZ: posZ };
+
+                        } else {
+                            let drawX = x * fontSize * 0.75;
+                            let drawY = y * fontSize;
+                            ctx.globalAlpha = Math.min(1.0, (0.5 + (val / 255) * 0.5) * globalBrightness);
+                            ctx.fillStyle = fillStyle;
+                            ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+                            ctx.fillText(char, drawX, drawY);
+                        }
+                    } 
+                } 
+            }
+
+            if (is3D && document.getElementById('toggleEmbers').checked) {
+                if (Math.random() < 0.4 * speed) {
+                    embersParticles.push({
+                        x: (Math.random() - 0.5) * side * 0.5, y: (Math.random() - 0.5) * side * 0.5,
+                        z: Math.random() * 20, life: 1.0,
+                        char: ['.', '*', '+', '°'][Math.floor(Math.random() * 4)],
+                        driftX: (Math.random() - 0.5) * 2, driftY: (Math.random() - 0.5) * 2
+                    });
+                }
+                for (let i = embersParticles.length - 1; i >= 0; i--) {
+                    let e = embersParticles[i];
+                    e.z += (2 + Math.random() * 2) * speed;
+                    e.x += e.driftX * speed + Math.sin(time * 5 + e.z * 0.1) * 0.1;
+                    e.y += e.driftY * speed + Math.cos(time * 5 + e.z * 0.1) * 0.1;
+                    e.life -= 0.015 * speed;
+
+                    if (e.life <= 0) { embersParticles.splice(i, 1); continue; }
+
+                    let p = project3D(e.x * spacing, e.y * spacing, e.z * (fontSize * 0.8));
+                    let alpha = e.life * 0.9;
+                    if (document.getElementById('toggleFog').checked) {
+                        let fogAlpha = (p.depthBase + maxDepth * 1.5) / (2.5 * maxDepth);
+                        fogAlpha = Math.max(0, Math.min(1, fogAlpha));
+                        alpha *= (0.15 + 0.85 * fogAlpha);
+                    }
+                    alpha = Math.min(1.0, alpha * globalBrightness);
+
+                    renderQueue.push({ char: e.char, drawX: p.x, drawY: p.y, color: cTop.value, alpha: alpha, depth: p.depthBase * 10000 + e.z * (fontSize * 0.8), isEmber: true });
+                }
+            }
+
+            if (is3D) {
+                renderQueue.sort((a, b) => a.depth - b.depth);
+                
+                // 光学叠加混合模式
+                ctx.globalCompositeOperation = document.getElementById('blendMode').value;
+                
+                renderQueue.forEach(item => {
+                    ctx.globalAlpha = item.alpha;
+                    ctx.fillStyle = item.color;
+                    ctx.font = item.isEmber ? `bold ${fontSize * 0.6}px 'JetBrains Mono', monospace` : `bold ${fontSize}px 'JetBrains Mono', monospace`;
+                    ctx.fillText(item.char, item.drawX, item.drawY);
+                });
+                
+                ctx.globalCompositeOperation = 'source-over'; // 恢复默认，防止干扰网格绘制
+
+                let style = document.getElementById('contourStyle').value;
+                if (style !== 'none') {
+                    ctx.lineWidth = 1.0;
+                    if (style === 'dashed') ctx.setLineDash([4, 4]);
+                    else ctx.setLineDash([]);
+                    
+                    for (let i = 0; i < side; i++) {
+                        for (let j = 0; j < side; j++) {
+                            let current = peaks[i][j];
+                            if (!current) continue;
+
+                            if (i + 1 < side && peaks[i+1][j]) {
+                                let right = peaks[i+1][j];
+                                let avgZ = (current.posZ + right.posZ) / 2;
+                                let alpha = Math.max(0, Math.min(1.0, (avgZ - 20) / 80)) * 0.7;
+                                alpha = Math.min(1.0, alpha * globalBrightness);
+                                if (alpha > 0.05) {
+                                    ctx.globalAlpha = alpha; ctx.strokeStyle = cMid.value; 
+                                    ctx.beginPath(); ctx.moveTo(current.drawX, current.drawY); ctx.lineTo(right.drawX, right.drawY); ctx.stroke();
+                                }
+                            }
+                            if ((style === 'solid' || style === 'dashed') && j + 1 < side && peaks[i][j+1]) {
+                                let bottom = peaks[i][j+1];
+                                let avgZ = (current.posZ + bottom.posZ) / 2;
+                                let alpha = Math.max(0, Math.min(1.0, (avgZ - 20) / 80)) * 0.7;
+                                alpha = Math.min(1.0, alpha * globalBrightness);
+                                if (alpha > 0.05) {
+                                    ctx.globalAlpha = alpha; ctx.strokeStyle = cMid.value;
+                                    ctx.beginPath(); ctx.moveTo(current.drawX, current.drawY); ctx.lineTo(bottom.drawX, bottom.drawY); ctx.stroke();
+                                }
+                            }
+                        }
+                    }
+                    ctx.setLineDash([]);
+                }
+                ctx.globalAlpha = 1.0;
+            }
+
+            if(isRainy) {
+                ctx.fillStyle = "rgba(180, 200, 255, 0.5)";
+                raindrops.forEach(r => ctx.fillRect(r.x, r.y, 1, 6));
+                ctx.fillStyle = "#888";
+                const smokeChars = ['~', '&', '§'];
+                smokeParticles.forEach(p => { ctx.globalAlpha = p.l; ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`; ctx.fillText(smokeChars[Math.floor(Math.random()*3)], p.x, p.y); });
+                ctx.globalAlpha = 1.0;
+            }
+            
+            // 视网膜 CRT 后期滤镜
+            if (document.getElementById('toggleCRT').checked) {
+                ctx.save();
+                // 扫描线 Scanlines
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+                for (let i = 0; i < canvas.height; i += 2) {
+                    ctx.fillRect(0, i, canvas.width, 1);
+                }
+                // 暗角 Vignette
+                let gradient = ctx.createRadialGradient(
+                    canvas.width / 2, canvas.height / 2, 0,
+                    canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 1.2
+                );
+                gradient.addColorStop(0, 'rgba(0,0,0,0)');
+                gradient.addColorStop(1, 'rgba(0,0,0,0.7)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+
+            if(isRecording) gifFrames.push(ctx.getImageData(0,0, canvas.width, canvas.height));
+        }
+
+        let isRightDragging = false;
+        let lastMouseX = 0, lastMouseY = 0;
+
+        canvas.addEventListener('contextmenu', e => e.preventDefault());
+        
+        canvas.addEventListener('mousedown', e => {
+            if (e.button === 2 && is3D) {
+                isRightDragging = true;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+
+        window.addEventListener('mouseup', e => {
+            if (e.button === 2) isRightDragging = false;
+        });
+
+        canvas.addEventListener('wheel', e => {
+            if (is3D) {
+                e.preventDefault();
+                camZoom -= e.deltaY * 0.001;
+                camZoom = Math.max(0.2, Math.min(camZoom, 5.0));
+            }
+        }, {passive: false});
+
+        function handleInput(e) {
+            initAudio(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            resetIdleTimer();
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            if(is3D) {
+                let side = Math.ceil(Math.sqrt(cols));
+                let spacing = (canvas.width * 0.5) / side;
+                let angleIso = Math.PI / 6;
+                let centerX = canvas.width / 2;
+                let centerY = canvas.height / 1.3;
+
+                let mouseX = ((clientX - rect.left) / rect.width) * canvas.width;
+                let mouseY = ((clientY - rect.top) / rect.height) * canvas.height;
+
+                let targetIsoX = (mouseX - centerX - camOffsetX) / camZoom;
+                let targetIsoY = (mouseY - centerY - camOffsetY) / camZoom;
+
+                let A = targetIsoX / Math.cos(angleIso);
+                let B = targetIsoY / Math.sin(angleIso);
+                let targetXr = (A + B) / 2;
+                let targetYr = (B - A) / 2;
+                
+                let targetPx = targetXr * Math.cos(-camRot) - targetYr * Math.sin(-camRot);
+                let targetPy = targetXr * Math.sin(-camRot) + targetYr * Math.cos(-camRot);
+
+                let targetGridX = Math.round((targetPx / spacing) + side / 2 - 0.5);
+                let targetGridY = Math.round((targetPy / spacing) + side / 2 - 0.5);
+
+                let radius = 3; 
+
+                for (let i = 0; i < cols; i++) {
+                    let gX = i % side;
+                    let gY = Math.floor(i / side);
+                    let dist = Math.sqrt(Math.pow(gX - targetGridX, 2) + Math.pow(gY - targetGridY, 2));
+                    if (dist <= radius) {
+                        for(let j = 1; j <= 4; j++) {
+                            let yBase = rows - j;
+                            if(yBase >= 0) {
+                                let idx = yBase * cols + i;
+                                if(fireData[idx] !== undefined) fireData[idx] = 255;
+                            }
+                        }
+                    }
+                }
+            } else {
+                let x = Math.floor(((clientX - rect.left) / rect.width * canvas.width) / (fontSize * 0.75));
+                let y = Math.floor(((clientY - rect.top) / rect.height * canvas.height) / fontSize);
+                for(let i=-2; i<=2; i++){ 
+                    for(let j=-2; j<=2; j++){ 
+                        const idx = (y+j) * cols + (x+i); 
+                        if(fireData[idx] !== undefined) fireData[idx] = 255; 
+                    } 
+                }
+            }
+        }
+
+        canvas.addEventListener('mousemove', e => {
+            if (isRightDragging && is3D) {
+                let dx = e.clientX - lastMouseX;
+                let dy = e.clientY - lastMouseY;
+                camRot += dx * 0.01;
+                camOffsetY += dy;
+                camOffsetX += dx * 0.5; 
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            } else {
+                handleInput(e);
+            }
+        });
+        
+        window.addEventListener('mousemove', resetIdleTimer);
+        canvas.addEventListener('touchstart', (e) => { handleInput(e); }, {passive:false});
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleInput(e); }, {passive:false});
+
+        document.getElementById('exportGif').onclick = function() {
+            if(isRecording) return;
+            isRecording = true; gifFrames = []; statusText.innerText = "Recording (10s)...";
+            const gif = new GIF({ workers: 2, quality: 10, width: canvas.width, height: canvas.height });
+            let frameCount = 0; const maxFrames = 100;
+            const recordInterval = setInterval(() => {
+                gif.addFrame(canvas, {copy: true, delay: 100});
+                frameCount++; statusText.innerText = `Recording_ ${Math.floor((frameCount/maxFrames)*100)}%`;
+                if(frameCount >= maxFrames) {
+                    clearInterval(recordInterval); isRecording = false; statusText.innerText = "Encoding GIF_";
+                    gif.on('finished', function(blob) {
+                        const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'bonfire_3d.gif'; a.click(); statusText.innerText = "System Ready_";
+                    });
+                    gif.render();
+                }
+            }, 100);
+        };
+
+        window.onload = () => {
+            syncInput(widthInput, valWidth, initCanvas); syncInput(heightInput, valHeight, initCanvas); syncInput(fontSizeInput, valFont, initCanvas);
+            syncInput(speedInput, valSpeed, updateUIEffects); syncInput(volInput, valVol, updateUIEffects); syncInput(viewScaleInput, valScale, updateUIEffects);
+            syncInput(camBrightnessInput, valBrightness, () => {}); 
+            
+            initCanvas(); updateUIEffects(); resetIdleTimer();
+            function loop(timestamp) { if (timestamp - lastTime > 1000 / (30 * speed)) { updateFire(); draw(); lastTime = timestamp; } requestAnimationFrame(loop); }
+            requestAnimationFrame(loop);
+        };
+    </script>
+</body>
+</html>
