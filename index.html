@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel Bonfire - Digital Art Installation</title>
+    <link href="https://gs.jurieo.com/gemini/fonts-googleapis/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root { 
+            --bg: #000000; 
+            --panel-bg: rgba(18, 18, 20, 0.45);
+            --text-main: #f5f5f7;
+            --text-secondary: #86868b;
+            --accent: #ffffff;
+            --danger: #ff3b30;
+            --border-color: rgba(255, 255, 255, 0.12);
+            --panel-width: 320px;
+            --control-bg: rgba(255, 255, 255, 0.08);
+            --toggle-bg: rgba(255, 255, 255, 0.15);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg); 
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0; 
+            display: flex; 
+            height: 100vh; 
+            overflow: hidden; 
+            touch-action: none;
+        }
+
+        #drag-bar {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 30px;
+            z-index: 9998;
+            -webkit-app-region: drag;
+        }
+
+        #main-view {
+            width: 100vw;
+            height: 100vh;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            background: var(--bg); 
+            overflow: hidden; 
+            position: absolute;
+            top: 0; left: 0;
+            perspective: 2000px; 
+            z-index: 1;
+        }
+
+        /* 优化点 1: 顶部操作栏容器 */
+        .top-actions-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 10001;
+            -webkit-app-region: no-drag;
+        }
+
+        .action-icon-btn {
+            width: 36px;
+            height: 36px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .action-icon-btn:hover {
+            color: var(--accent);
+            background: var(--toggle-bg);
+            transform: scale(1.05);
+        }
+
+        .action-icon-btn.btn-close:hover {
+            background: var(--danger);
+            color: white;
+        }
+
+        #ui-panel {
+            position: absolute;
+            top: 76px; 
+            right: 20px;
+            width: var(--panel-width);
+            max-height: calc(100vh - 100px);
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            z-index: 10000;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            -webkit-app-region: no-drag;
+        }
+
+        body.ui-hidden #ui-panel {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(120%);
+        }
+
+        .panel-header {
+            flex-shrink: 0;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .panel-scroll-area {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 6px;
+            margin-right: -6px; 
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .panel-scroll-area::-webkit-scrollbar { width: 4px; background: transparent; }
+        .panel-scroll-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+
+        .panel-footer {
+            flex-shrink: 0;
+            display: flex; 
+            flex-direction: column; 
+            gap: 8px; 
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--border-color);
+        }
+
+        h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: var(--accent); }
+
+        details {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0; 
+        }
+        summary {
+            padding: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            user-select: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.02);
+            transition: background 0.2s;
+        }
+        summary:hover { background: rgba(255,255,255,0.06); }
+        summary::-webkit-details-marker { display: none; }
+        summary::after { content: '+'; color: var(--text-secondary); font-size: 14px; }
+        details[open] summary::after { content: '−'; }
+        details[open] summary { border-bottom: 1px solid var(--border-color); }
+        
+        .details-content {
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-size: 10px; font-weight: 400; color: var(--text-secondary); text-transform: uppercase; }
+        
+        .val-input {
+            float: right; background: transparent; border: none;
+            color: var(--text-secondary); font-size: 10px; font-weight: 700;
+            text-align: right; width: 45px; outline: none; padding: 0; font-family: inherit;
+        }
+
+        #canvas-wrapper { 
+            position: relative; 
+            line-height: 0; 
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        
+        #canvas-wrapper.isometric { transform: rotateX(15deg); }
+
+        canvas { image-rendering: pixelated; cursor: crosshair; background: #000; border-radius: 4px; box-shadow: 0 0 80px rgba(0,0,0,0.8); }
+
+        .switch { position: relative; display: inline-block; width: 32px; height: 16px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--control-bg); transition: .4s; border-radius: 16px; border: 1px solid var(--border-color); }
+        .slider:before { position: absolute; content: ""; height: 10px; width: 10px; left: 2px; bottom: 2px; background-color: var(--text-secondary); transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(16px); background-color: var(--bg); }
+
+        button.action-btn {
+            background: var(--control-bg); color: var(--text-main); border: 1px solid var(--border-color);
+            padding: 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.2s; font-family: inherit;
+        }
+        button.action-btn:hover { background: var(--toggle-bg); border-color: var(--text-secondary); }
+        
+        select {
+            background: var(--control-bg); color: var(--text-main); font-family: inherit;
+            border: 1px solid var(--border-color); padding: 6px 8px; border-radius: 6px; font-size: 11px;
+            outline: none; appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='grey' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 8px center; background-size: 12px;
+            padding-right: 28px;
+        }
+        select option { background-color: #121214; color: #f5f5f7; }
+
+        input[type="text"].custom-chars { background: var(--control-bg); color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 8px; border-radius: 6px; font-size: 11px; outline: none; font-family: inherit; }
+        input[type="color"] { -webkit-appearance: none; border: none; width: 100%; height: 20px; cursor: pointer; background: none; padding: 0; border-radius: 4px; }
+        input[type="color"]::-webkit-color-swatch { border: 1px solid var(--border-color); border-radius: 4px; }
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 2px; background: var(--control-bg); border-radius: 2px; accent-color: var(--accent); }
+
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; }
+
+        #cyber-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            opacity: 0.85;
+            user-select: none;
+        }
+        .blink { animation: blinker 1s step-end infinite; }
+        @keyframes blinker { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div id="drag-bar"></div>
+
+    <div id="main-view">
+        <div id="canvas-wrapper">
+            <canvas id="fireCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="top-actions-container">
+        <div class="action-icon-btn" id="ui-toggle-btn" title="Toggle UI [H]">≡</div>
+        <div class="action-icon-btn" id="btn-fs" title="Fullscreen">⤢</div>
+        <div class="action-icon-btn btn-close" id="btn-close" title="Exit">✕</div>
+    </div>
+
+    <div id="ui-panel">
+        <div class="panel-header">
+            <h3>BONFIRE_OS</h3>
+        </div>
+
+        <div class="panel-scroll-area">
+            <details open>
+                <summary>[ 视觉渲染 / Rendering ]</summary>
+                <div class="details-content">
+                    <div class="control-group toggle-row">
+                        <label>3D 模式 / 3D Mode</label>
+                        <label class="switch">
+                            <input type="checkbox" id="toggle3DSwitch">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="group3D" style="display:none; flex-direction: column; gap: 12px;">
+                        <div class="control-group">
+                            <label>混合模式 / Blend Mode</label>
+                            <select id="blendMode">
+                                <option value="source-over">正常 / Source-Over</option>
+                                <option value="lighter">光学叠加 / Lighter</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>等高线 / Contours</label>
+                            <select id="contourStyle">
+                                <option value="none">无 / None</option>
+                                <option value="horizontal">横向扫描 / Horizontal</option>
+                                <option value="solid" selected>实线网格 / Solid Grid</option>
+                                <option value="dashed">虚线网格 / Dashed Grid</option>
+                            </select>
+                        </div>
+                        <div class="control-group toggle-row">
+                            <label>自动旋转 / Auto Rotate</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggleAutoRot">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="control-group">
+                            <label>手动旋转 / Rotation <input type="number" id="val-rot" class="val-input" readonly></label>
+                            <input type="range" id="camRotSlider" min="0" max="360" value="0">
+                        </div>
+                        <div class="control-group toggle-row">
+                            <label>游离余烬 / Embers</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggleEmbers" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="control-group toggle-row">
+                            <label>景深迷雾 / Depth Fog</label>
+                            <label class="switch">
+                                <input type="checkbox" id="toggleFog" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>[ 形态引擎 / Physics ]</summary>
+                <div class="details-content">
+                    <div class="control-group">
+                        <label>火焰形态 / Form [R]</label>
+                        <select id="flameShape">
+                            <option value="classic">经典 / Classic</option>
+                            <option value="campfire">篝火 / Campfire</option>
+                            <option value="torch">火炬 / Torch</option>
+                            <option value="inferno">烈焰 / Inferno</option>
+                            <option value="ember">余烬 / Ember</option>
+                            <option value="plasma">等离子 / Plasma</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>画布宽度 / Width <input type="number" id="val-width" class="val-input"></label>
+                        <input type="range" id="canvasWidth" min="200" max="1000" value="400">
+                    </div>
+                    <div class="control-group">
+                        <label>画布高度 / Height <input type="number" id="val-height" class="val-input"></label>
+                        <input type="range" id="canvasHeight" min="200" max="1000" value="500">
+                    </div>
+                    <div class="control-group">
+                        <label>字符集 / Charset</label>
+                        <select id="charSet">
+                            <option value="ascii">经典 / ASCII</option>
+                            <option value="binary">二进制 / Binary</option>
+                            <option value="blocks">方块 / Blocks</option>
+                            <option value="braille">盲文 / Braille</option>
+                            <option value="dots">点阵 / Dots</option>
+                            <option value="japanese">日文 / Kanji</option>
+                            <option value="matrix">矩阵 / Matrix</option>
+                            <option value="customChar">自定义 / Custom</option>
+                        </select>
+                    </div>
+                    <div class="control-group" id="customCharGroup" style="display:none">
+                        <label>输入字符 / Input String</label>
+                        <input type="text" id="customInput" class="custom-chars" value="@#$*!">
+                    </div>
+                    <div class="control-group">
+                        <label>字号 / Font Size <input type="number" id="val-font" class="val-input"></label>
+                        <input type="range" id="fontSize" min="6" max="24" value="12">
+                    </div>
+                    <div class="control-group">
+                        <label>缩放 / Scale <input type="number" id="val-scale" class="val-input" step="0.1"></label>
+                        <input type="range" id="viewScale" min="0.5" max="2.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="control-group">
+                        <label>燃烧速度 / Speed <input type="number" id="val-speed" class="val-input" step="0.1"></label>
+                        <input type="range" id="fireSpeed" min="0.2" max="3.0" step="0.1" value="1.0">
+                    </div>
+                </div>
+            </details>
+
+            <details>
+                <summary>[ 色彩与环境 / Environment ]</summary>
+                <div class="details-content">
+                    <div class="control-group toggle-row">
+                        <label>色彩流转 / Color Cycle</label>
+                        <label class="switch">
+                            <input type="checkbox" id="toggleColorCycle">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label>预设 / Presets</label>
+                        <select id="colorPresets">
+                            <option value="custom">自定义 / Custom</option>
+                            <option value="classic">经典 / Classic</option>
+                            <option value="soul">灵魂 / Soul</option>
+                            <option value="forest">森 / Forest</option>
+                            <option value="cyber">赛博 / Cyber</option>
+                            <option value="toxic">剧毒 / Toxic</option>
+                            <option value="void">虚空 / Void</option>
+                            <option value="sunset">落日 / Sunset</option>
+                            <option value="ocean">深海 / Ocean</option>
+                            <option value="gold">黄金 / Gold</option>
+                            <option value="sakura">樱花 / Sakura</option>
+                        </select>
+                    </div>
+                    <div class="control-group"><label>顶部 / Top</label><input type="color" id="colorTop" value="#ff2200"></div>
+                    <div class="control-group"><label>中部 / Mid</label><input type="color" id="colorMid" value="#ff8800"></div>
+                    <div class="control-group"><label>底部 / Bottom</label><input type="color" id="colorBottom" value="#ffffff"></div>
+                    <button class="action-btn" onclick="randomizeFireColors()">随机配色 / Shuffle Colors [C]</button>
+                    
+                    <div class="control-group">
+                        <label>整体亮度 / Brightness <input type="number" id="val-brightness" class="val-input" step="0.1"></label>
+                        <input type="range" id="camBrightness" min="0.1" max="10.0" step="0.1" value="1.0">
+                    </div>
+                    <div class="control-group toggle-row">
+                        <label>环境 / Rain Mode</label>
+                        <button class="action-btn" id="toggleRain" style="padding: 4px 8px;">OFF</button>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="panel-footer">
+            <div id="cyber-status">
+                > SYS.KERNEL: ONLINE<br>
+                > RENDER_ENGINE: ACTIVE <span class="blink">_</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // NW.JS & Window Logic
+        let win;
+        try {
+            win = nw.Window.get();
+            document.getElementById('btn-close').onclick = () => win.close();
+            document.getElementById('btn-fs').onclick = () => win.toggleFullscreen();
+        } catch(e) {
+            document.getElementById('btn-close').onclick = () => console.log("Exit triggered");
+            document.getElementById('btn-fs').onclick = () => {
+                if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+                else document.exitFullscreen();
+            };
+        }
+
+        const canvas = document.getElementById('fireCanvas'), 
+              wrapper = document.getElementById('canvas-wrapper'), 
+              ctx = canvas.getContext('2d', { alpha: false });
+        const uiPanel = document.getElementById('ui-panel');
+        const uiToggleBtn = document.getElementById('ui-toggle-btn');
+
+        // UI Toggle logic
+        uiToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.body.classList.toggle('ui-hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!uiPanel.contains(e.target) && !e.target.closest('.top-actions-container')) {
+                if (!document.body.classList.contains('ui-hidden')) document.body.classList.add('ui-hidden');
+            }
+        });
+
+        // 核心参数
+        const shapePresets = {
+            classic: { h: 15, c: 1.2 },
+            campfire: { h: 12, c: 1.8 },
+            torch: { h: 22, c: 0.5 },
+            inferno: { h: 25, c: 2.0 },
+            ember: { h: 6, c: 0.8 },
+            plasma: { h: 18, c: 0.2 }
+        };
+
+        const charSets = { 
+            ascii: ['@', '#', '$', '*', '!', ';', ':', '.', ' '], 
+            binary: ['1', '0', ' '], 
+            blocks: ['█', '▓', '▒', '░', ' '], 
+            braille: ['⣿', '⣶', '⣤', '⣀', ' '], 
+            dots: ['●', '○', '•', '·', ' '], 
+            japanese: ['火', '炎', '熱', '炭', ' '], 
+            matrix: ['$', 'シ', '1', '0', ' '] 
+        };
+
+        // 优化点 2: 状态持久化逻辑
+        const STORAGE_KEY = 'BONFIRE_CONFIG';
+        function saveConfig() {
+            const config = {};
+            document.querySelectorAll('input, select').forEach(el => {
+                if (el.type === 'checkbox') config[el.id] = el.checked;
+                else config[el.id] = el.value;
+            });
+            config['isRainy'] = isRainy;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+        }
+
+        function loadConfig() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (!saved) return;
+            const config = JSON.parse(saved);
+            Object.keys(config).forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (el.type === 'checkbox') el.checked = config[id];
+                else el.value = config[id];
+                
+                // 触发同步逻辑
+                if (el.id === 'toggle3DSwitch') {
+                    is3D = el.checked;
+                    wrapper.classList.toggle('isometric', is3D);
+                    document.getElementById('group3D').style.display = is3D ? 'flex' : 'none';
+                }
+            });
+            isRainy = config['isRainy'] || false;
+            document.getElementById('toggleRain').innerText = isRainy ? "ON" : "OFF";
+            if(config['charSet'] === 'customChar') document.getElementById('customCharGroup').style.display = 'flex';
+        }
+
+        // DOM Elements
+        const flameShapeSelect = document.getElementById('flameShape');
+        const fontSizeInput = document.getElementById('fontSize'), 
+              viewScaleInput = document.getElementById('viewScale'), 
+              speedInput = document.getElementById('fireSpeed'), 
+              widthInput = document.getElementById('canvasWidth'), 
+              heightInput = document.getElementById('canvasHeight'), 
+              charSetSelect = document.getElementById('charSet'), 
+              presetSelect = document.getElementById('colorPresets'), 
+              cBot = document.getElementById('colorBottom'), 
+              cMid = document.getElementById('colorMid'), 
+              cTop = document.getElementById('colorTop'), 
+              customInput = document.getElementById('customInput'),
+              camBrightnessInput = document.getElementById('camBrightness'),
+              camRotSlider = document.getElementById('camRotSlider'),
+              valRot = document.getElementById('val-rot');
+
+        // Global State
+        let is3D = false, isRainy = false, hueShift = 0;
+        let fireData = [], raindrops = [], smokeParticles = [], embersParticles = [];
+        let cols, rows, fontSize = 12, speed = 1.0, lastTime = 0;
+        let flameHeight = 15, chaosLevel = 1.2, camRot = 0, camOffsetX = 0, camOffsetY = 0, camZoom = 1.0;
+        let isSliderDragging = false;
+
+        // Sync inputs
+        function syncInput(rangeEl, inputEl, callback) {
+            inputEl.value = rangeEl.value;
+            rangeEl.addEventListener('input', () => { 
+                inputEl.value = rangeEl.value; 
+                if(callback) callback(); 
+                saveConfig(); 
+            });
+        }
+
+        function initCanvas() {
+            fontSize = parseInt(fontSizeInput.value); 
+            canvas.width = parseInt(widthInput.value); 
+            canvas.height = parseInt(heightInput.value);
+            cols = Math.floor(canvas.width / (fontSize * 0.75)); 
+            rows = Math.floor(canvas.height / fontSize); 
+            fireData = new Array(cols * rows).fill(0);
+        }
+
+        // 色彩辅助
+        const hslToHex = (h, s, l) => {
+            l /= 100; const a = s * Math.min(l, 1 - l) / 100;
+            const f = n => {
+                const k = (n + h / 30) % 12;
+                const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                return Math.round(255 * color).toString(16).padStart(2, '0');
+            };
+            return `#${f(0)}${f(8)}${f(4)}`;
+        };
+
+        function randomizeFireColors() {
+            presetSelect.value = "custom"; const h = Math.random() * 360;
+            cBot.value = hslToHex(h, 100, 85); cMid.value = hslToHex((h + 20) % 360, 90, 60); cTop.value = hslToHex((h + 40) % 360, 80, 35);
+            saveConfig();
+        }
+
+        // Event Listeners
+        flameShapeSelect.onchange = (e) => {
+            const p = shapePresets[e.target.value];
+            if(p) { flameHeight = p.h; chaosLevel = p.c; }
+            saveConfig();
+        };
+
+        document.getElementById('toggle3DSwitch').onchange = function() {
+            is3D = this.checked;
+            wrapper.classList.toggle('isometric', is3D);
+            document.getElementById('group3D').style.display = is3D ? 'flex' : 'none';
+            saveConfig();
+        };
+
+        charSetSelect.onchange = function() {
+            document.getElementById('customCharGroup').style.display = this.value === 'customChar' ? 'flex' : 'none';
+            saveConfig();
+        };
+
+        document.querySelectorAll('input, select').forEach(el => {
+            if(!el.onchange && !el.onclick) el.addEventListener('change', saveConfig);
+        });
+
+        document.getElementById('toggleRain').onclick = function() {
+            isRainy = !isRainy;
+            this.innerText = isRainy ? "ON" : "OFF";
+            saveConfig();
+        };
+
+        camRotSlider.addEventListener('input', (e) => {
+            camRot = e.target.value * Math.PI / 180;
+            valRot.value = e.target.value;
+            isSliderDragging = true;
+        });
+        camRotSlider.addEventListener('change', () => { isSliderDragging = false; saveConfig(); });
+
+        // Physics Logic
+        function updateFire() {
+            for (let x = 0; x < cols; x++) fireData[(rows - 1) * cols + x] = Math.random() > 0.6 ? 255 : 0;
+            for (let y = 0; y < rows - 1; y++) { 
+                for (let x = 0; x < cols; x++) { 
+                    const idx = y * cols + x, src = ((y + 1) * cols + x); 
+                    const drift = Math.round((Math.random() - 0.5) * chaosLevel * 4); 
+                    let tx = (x + drift + cols) % cols; 
+                    const val = fireData[src] - (Math.random() * flameHeight); 
+                    fireData[y * cols + tx] = val > 0 ? val : 0; 
+                } 
+            }
+            if(isRainy) {
+                if(Math.random() > 0.6) raindrops.push({x: Math.random()*canvas.width, y: 0, s: 8 + Math.random()*10});
+                raindrops.forEach((r, i) => {
+                    r.y += r.s;
+                    const tx = Math.floor(r.x / (fontSize * 0.75));
+                    const ty = Math.floor(r.y / fontSize);
+                    if(fireData[ty * cols + tx] > 50) {
+                        fireData[ty * cols + tx] = 0;
+                        smokeParticles.push({x: r.x, y: r.y, l: 1.0});
+                        raindrops.splice(i, 1);
+                    } else if(r.y > canvas.height) raindrops.splice(i, 1);
+                });
+                smokeParticles.forEach((p, i) => { p.y -= 1; p.l -= 0.05; if(p.l <= 0) smokeParticles.splice(i, 1); });
+            }
+
+            // 优化点 4: 色彩流转逻辑
+            if (document.getElementById('toggleColorCycle').checked) {
+                hueShift = (hueShift + 0.5) % 360;
+                cBot.value = hslToHex(hueShift, 90, 80);
+                cMid.value = hslToHex((hueShift + 30) % 360, 80, 50);
+                cTop.value = hslToHex((hueShift + 60) % 360, 70, 30);
+            }
+        }
+
+        // Draw Logic
+        function draw() {
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            let chars = charSetSelect.value === 'customChar' ? customInput.value.split('') : charSets[charSetSelect.value];
+            if (!chars || chars.length === 0) chars = [' '];
+            
+            const centerX = canvas.width / 2, centerY = canvas.height / 1.3;
+            const time = Date.now() * 0.002 * speed;
+            let globalBrightness = parseFloat(camBrightnessInput.value);
+
+            if (is3D && document.getElementById('toggleAutoRot').checked && !isSliderDragging) {
+                camRot += 0.005 * speed; 
+                let deg = (((camRot * 180 / Math.PI) % 360) + 360) % 360;
+                camRotSlider.value = deg.toFixed(0);
+                valRot.value = deg.toFixed(0);
+            }
+
+            let renderQueue = [];
+            let side = Math.ceil(Math.sqrt(cols)), spacing = (canvas.width * 0.5) / side, maxDepth = side * spacing;
+            const angleIso = Math.PI / 6;
+
+            const project3D = (px, py, pz) => {
+                let xr = px * Math.cos(camRot) - py * Math.sin(camRot);
+                let yr = px * Math.sin(camRot) + py * Math.cos(camRot);
+                return {
+                    x: centerX + (xr - yr) * Math.cos(angleIso) * camZoom + camOffsetX,
+                    y: centerY + ((xr + yr) * Math.sin(angleIso) - pz) * camZoom + camOffsetY,
+                    depthBase: xr + yr
+                };
+            };
+
+            let peaks = Array.from({length: side}, () => new Array(side).fill(null));
+
+            if (is3D) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(100, 150, 255, 0.15)'; 
+                ctx.beginPath();
+                for(let i = 0; i <= side; i++) {
+                    let offset = (i - side/2) * spacing, start = (-side/2) * spacing, end = (side/2) * spacing;
+                    let p1 = project3D(offset, start, 0), p2 = project3D(offset, end, 0);
+                    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+                    let p3 = project3D(start, offset, 0), p4 = project3D(end, offset, 0);
+                    ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y);
+                }
+                ctx.stroke(); ctx.restore();
+            }
+
+            for (let y = 0; y < rows; y++) { 
+                for (let x = 0; x < cols; x++) { 
+                    const val = fireData[y * cols + x]; 
+                    if (val > 15) { 
+                        let fillStyle = val > 204 ? cBot.value : (val > 76 ? cMid.value : cTop.value);
+                        let char = chars[chars.length - 1 - Math.floor((val / 255) * (chars.length - 1))];
+                        
+                        if (is3D) {
+                            let gridX = x % side, gridY = Math.floor(x / side);
+                            let dx = gridX - side/2 + 0.5, dy = gridY - side/2 + 0.5, maxDist = side / 2;
+                            let noise = Math.sin(gridX * 0.6 + time * 1.2) * Math.cos(gridY * 0.6 - time * 0.8) * 0.4;
+                            let coneFactor = Math.max(0, 1 - (Math.sqrt(dx*dx + dy*dy) + noise * maxDist * 0.6) / maxDist * 1.2); 
+                            if (coneFactor <= 0) continue;
+
+                            let posZ = (rows - 1 - y) * (fontSize * 0.8) * coneFactor; 
+                            if (val > 240) posZ *= (1.0 + Math.random() * 0.8);
+                            posZ += (val / 255) * (fontSize * 1.5) * coneFactor; 
+
+                            let sway = Math.pow(posZ / 50, 1.2) * 2.5;
+                            let posX = dx * spacing + (Math.sin(time + gridY * 0.4 - y * 0.15)) * sway;
+                            let posY = dy * spacing + (Math.cos(time * 0.9 + gridX * 0.4 - y * 0.12)) * sway;
+                            
+                            let p = project3D(posX, posY, posZ);
+                            let alpha = (0.5 + (val / 255) * 0.5);
+                            
+                            if (document.getElementById('toggleFog').checked) {
+                                let fogAlpha = Math.max(0, Math.min(1, (p.depthBase + maxDepth * 1.5) / (2.5 * maxDepth)));
+                                alpha *= (0.15 + 0.85 * fogAlpha);
+                            }
+                            
+                            // 优化点 3: 这里的亮度计算允许溢出至白色，模拟过曝感
+                            alpha = alpha * globalBrightness;
+                            renderQueue.push({ char, drawX: p.x, drawY: p.y, color: fillStyle, alpha, depth: p.depthBase * 10000 + posZ });
+                            if (!peaks[gridX][gridY] || posZ > peaks[gridX][gridY].posZ) peaks[gridX][gridY] = { drawX: p.x, drawY: p.y, posZ: posZ };
+                        } else {
+                            ctx.globalAlpha = Math.min(1.0, (0.5 + (val / 255) * 0.5) * globalBrightness);
+                            ctx.fillStyle = fillStyle;
+                            ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+                            ctx.fillText(char, x * fontSize * 0.75, y * fontSize);
+                        }
+                    } 
+                } 
+            }
+
+            if (is3D) {
+                // Embers logic
+                if (document.getElementById('toggleEmbers').checked && Math.random() < 0.4 * speed) {
+                    embersParticles.push({
+                        x: (Math.random() - 0.5) * side * 0.5, y: (Math.random() - 0.5) * side * 0.5,
+                        z: Math.random() * 20, life: 1.0, char: ['*', '°', '.'][Math.floor(Math.random() * 3)]
+                    });
+                }
+                for (let i = embersParticles.length - 1; i >= 0; i--) {
+                    let e = embersParticles[i]; e.z += 3 * speed; e.life -= 0.02 * speed;
+                    if (e.life <= 0) { embersParticles.splice(i, 1); continue; }
+                    let p = project3D(e.x * spacing, e.y * spacing, e.z * fontSize * 0.8);
+                    renderQueue.push({ char: e.char, drawX: p.x, drawY: p.y, color: cTop.value, alpha: e.life * globalBrightness, depth: p.depthBase * 10000 + 1000, isEmber: true });
+                }
+
+                renderQueue.sort((a, b) => a.depth - b.depth);
+                ctx.globalCompositeOperation = document.getElementById('blendMode').value;
+                renderQueue.forEach(item => {
+                    ctx.globalAlpha = Math.min(1.0, item.alpha);
+                    ctx.fillStyle = item.color;
+                    ctx.font = `bold ${item.isEmber ? fontSize*0.6 : fontSize}px 'JetBrains Mono'`;
+                    ctx.fillText(item.char, item.drawX, item.drawY);
+                });
+                ctx.globalCompositeOperation = 'source-over';
+                
+                // Contours
+                let style = document.getElementById('contourStyle').value;
+                if (style !== 'none') {
+                    ctx.lineWidth = 1;
+                    if (style === 'dashed') ctx.setLineDash([4, 4]); else ctx.setLineDash([]);
+                    for (let i = 0; i < side; i++) {
+                        for (let j = 0; j < side; j++) {
+                            let cur = peaks[i][j]; if (!cur) continue;
+                            const drawLine = (target) => {
+                                let alpha = Math.min(1.0, Math.max(0, (cur.posZ + target.posZ)/2 - 20) / 80 * 0.7 * globalBrightness);
+                                if (alpha > 0.05) {
+                                    ctx.globalAlpha = alpha; ctx.strokeStyle = cMid.value;
+                                    ctx.beginPath(); ctx.moveTo(cur.drawX, cur.drawY); ctx.lineTo(target.drawX, target.drawY); ctx.stroke();
+                                }
+                            }
+                            if (i+1 < side && peaks[i+1][j]) drawLine(peaks[i+1][j]);
+                            if ((style === 'solid' || style === 'dashed') && j+1 < side && peaks[i][j+1]) drawLine(peaks[i][j+1]);
+                        }
+                    }
+                }
+            }
+
+            if(isRainy) {
+                ctx.fillStyle = "rgba(180, 200, 255, 0.5)";
+                raindrops.forEach(r => ctx.fillRect(r.x, r.y, 1, 6));
+                ctx.fillStyle = "#888";
+                smokeParticles.forEach(p => { ctx.globalAlpha = p.l; ctx.fillText('~', p.x, p.y); });
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        // Interaction
+        let isRightDragging = false;
+        canvas.oncontextmenu = e => e.preventDefault();
+        canvas.onmousedown = e => { if (e.button === 2 && is3D) { isRightDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; } };
+        window.onmouseup = () => isRightDragging = false;
+        canvas.onwheel = e => { if (is3D) { e.preventDefault(); camZoom = Math.max(0.2, Math.min(camZoom - e.deltaY * 0.001, 5.0)); } };
+
+        canvas.onmousemove = e => {
+            if (isRightDragging && is3D) {
+                camRot += (e.clientX - lastMouseX) * 0.01;
+                camOffsetY += (e.clientY - lastMouseY);
+                camOffsetX += (e.clientX - lastMouseX) * 0.5;
+            } else if (e.buttons === 1 && !is3D) {
+                const rect = canvas.getBoundingClientRect();
+                let x = Math.floor(((e.clientX - rect.left) / rect.width * canvas.width) / (fontSize * 0.75));
+                let y = Math.floor(((e.clientY - rect.top) / rect.height * canvas.height) / fontSize);
+                for(let i=-2; i<=2; i++) for(let j=-2; j<=2; j++) {
+                    const idx = (y+j) * cols + (x+i);
+                    if(fireData[idx] !== undefined) fireData[idx] = 255;
+                }
+            }
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+        };
+
+        window.onkeydown = (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            const key = e.key.toLowerCase();
+            if (key === 'h') document.body.classList.toggle('ui-hidden');
+            else if (key === 'r') {
+                const keys = Object.keys(shapePresets);
+                flameShapeSelect.value = keys[Math.floor(Math.random() * keys.length)];
+                flameShapeSelect.dispatchEvent(new Event('change'));
+            } else if (key === 'c') randomizeFireColors();
+        };
+
+        // Init
+        window.onload = () => {
+            loadConfig();
+            syncInput(widthInput, document.getElementById('val-width'), initCanvas);
+            syncInput(heightInput, document.getElementById('val-height'), initCanvas);
+            syncInput(fontSizeInput, document.getElementById('val-font'), initCanvas);
+            syncInput(speedInput, document.getElementById('val-speed'), () => speed = parseFloat(speedInput.value));
+            syncInput(viewScaleInput, document.getElementById('val-scale'), () => { if(!is3D) wrapper.style.transform = `scale(${viewScaleInput.value})`; });
+            syncInput(camBrightnessInput, document.getElementById('val-brightness'));
+            
+            initCanvas();
+            if(!is3D) wrapper.style.transform = `scale(${viewScaleInput.value})`;
+            
+            function loop(t) {
+                speed = parseFloat(speedInput.value);
+                if (t - lastTime > 1000 / (30 * speed)) { updateFire(); draw(); lastTime = t; }
+                requestAnimationFrame(loop);
+            }
+            requestAnimationFrame(loop);
+        };
+    </script>
+</body>
+</html>
